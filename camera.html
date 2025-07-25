@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Photo Capture and Download</title>
+</head>
+<body>
+  <h2>Photo Capture App</h2>
+
+  <!-- Webcam preview -->
+  <video id="video" width="320" height="240" autoplay></video><br><br>
+
+  <!-- Buttons -->
+  <button onclick="takePhoto()">📸 Click Photo</button>
+  <button onclick="downloadPhoto()">⬇ Download Photo</button><br><br>
+
+  <!-- Canvas to show captured photo -->
+  <canvas id="canvas" width="320" height="240" style="display: none;"></canvas>
+  <img id="photo" alt="Captured Photo" width="320" height="240"/>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const photo = document.getElementById('photo');
+    const context = canvas.getContext('2d');
+
+    // Access the webcam
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(stream => {
+        video.srcObject = stream;
+      })
+      .catch(error => {
+        alert("Camera access denied or not available.");
+        console.error(error);
+      });
+
+    // Take photo function
+    function takePhoto() {
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/png');
+      photo.src = dataUrl;
+    }
+
+    // Download photo function
+    function downloadPhoto() {
+      const link = document.createElement('a');
+      link.download = 'captured_photo.png';
+      link.href = photo.src;
+      link.click();
+    }
+  </script>
+</body>
+</html>
