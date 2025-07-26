@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Send WhatsApp Message</title>
+</head>
+<body>
+
+<button onclick="sendWhatsApp()">Send WhatsApp Message</button>
+<p id="status"></p>
+
+<script>
+function sendWhatsApp() {
+  const phoneNumber = "7507567249"; // Add country code (e.g., 91 for India)
+  const message = "Hello, this is a test message from my web app!";
+  const encodedMessage = encodeURIComponent(message);
+  const whatsappURL = `https://wa.me/${phoneNumber}?text=${encodedMessage}`;
+  window.open(whatsappURL, '_blank');
+  document.getElementById('status').textContent = "WhatsApp window opened! Please send your message.";
+}
+</script>
+
+</body>
+</html>
