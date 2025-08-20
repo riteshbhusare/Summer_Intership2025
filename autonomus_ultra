@@ -1,0 +1,689 @@
+# --- All imports go at the top ---
+import streamlit as st
+from twilio.rest import Client
+import smtplib
+import pywhatkit as kit
+import re
+from PIL import Image, ImageDraw, ImageFont
+import requests
+from bs4 import BeautifulSoup
+from openai import OpenAI
+import time
+from urllib.parse import urljoin
+import paramiko
+import streamlit.components.v1 as components
+
+# --- AWS & Gesture Control Specific Imports ---
+import boto3
+import cv2
+import numpy as np
+import mediapipe as mp
+from botocore.exceptions import ClientError, WaiterError
+
+# --- Page Configuration (MUST be the first Streamlit command) ---
+st.set_page_config(
+    page_title="Autonomous Ultra Project",
+    page_icon="🚀",
+    layout="wide"
+)
+
+# --- FONT & STYLING INJECTION (UI/UX Enhancement for ALL tools) ---
+def inject_custom_css():
+    st.markdown("""
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap');
+        html, body, [class*="st-"], .st-emotion-cache-10trblm, .st-emotion-cache-le2y6z {
+            font-family: 'Poppins', sans-serif;
+        }
+        h1, h2, h3 {
+            font-weight: 600;
+        }
+        div[data-baseweb="input"], div[data-baseweb="textarea"] {
+            background-color: #1a1a2e;
+            border-radius: 0.5rem;
+            border: 1px solid #4a4a6a;
+        }
+        .st-emotion-cache-17lntch, .st-emotion-cache-p5msec {
+            background-color: transparent !important;
+            color: #FAFAFA !important;
+        }
+        ::placeholder {
+            color: #888899 !important;
+            opacity: 1;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+inject_custom_css()
+
+
+# ==============================================================================
+# CREDENTIALS SECTION
+# ==============================================================================
+GEMINI_API_KEY = "Gemini key"
+ACCOUNT_SID = "twilio sid"
+AUTH_TOKEN = "twilio token"
+TWILIO_PHONE = "+twilio call"
+SENDER_EMAIL = "your@gmail.com"
+SENDER_APP_PASSWORD = "app pass"
+
+# --- AWS CONFIG ---
+AWS_ACCESS_KEY = "aws keys "
+AWS_SECRET_KEY = "secret keys "
+AWS_REGION = "regin"
+S3_BUCKET_NAME = "name of bucket"
+EC2_KEY_1 = "key"
+EC2_KEY_2 = "keys "
+AMI_1 = "key"
+AMI_2 = "key4"
+SG_1 = "key"
+SG_2 = "keys"
+# ==============================================================================
+
+
+# --- Initialize Clients ---
+@st.cache_resource
+def initialize_ai_client():
+    if GEMINI_API_KEY and not GEMINI_API_KEY.startswith("PASTE_"):
+        try: return OpenAI(api_key=GEMINI_API_KEY, base_url="https://generativelanguage.googleapis.com/v1beta/openai/")
+        except Exception: return None
+    return None
+
+@st.cache_resource
+def initialize_twilio_client():
+    if ACCOUNT_SID and not ACCOUNT_SID.startswith("PASTE_"):
+        try: return Client(ACCOUNT_SID, AUTH_TOKEN)
+        except Exception: return None
+    return None
+
+gemini_client = initialize_ai_client()
+twilio_client = initialize_twilio_client()
+
+def check_credentials(services):
+    missing_creds = []
+    if "twilio" in services and twilio_client is None: missing_creds.append("Twilio")
+    if "email" in services and not SENDER_EMAIL : missing_creds.append("Email")
+    if "gemini" in services and gemini_client is None: missing_creds.append("Gemini AI")
+    if missing_creds:
+        st.warning(f"A problem occurred with {', '.join(missing_creds)} credentials. Please check them.", icon="⚠️")
+        return False
+    return True
+
+# --- HOME PAGE ---
+def show_home_page():
+    st.title("Autonomous Ultra Project 🚀")
+    st.info("**Select a tool from the sidebar to begin.** Each tool is designed to be intuitive and powerful.", icon="👈")
+    
+    st.markdown("---")
+
+    st.subheader("About The Project")
+    st.markdown("""
+        The Autonomous Ultra Project (AUP) is a comprehensive, all-in-one dashboard designed to streamline a wide variety of digital tasks. It integrates powerful APIs and libraries into a single, user-friendly Streamlit interface. 
+        
+        Whether you need to manage cloud infrastructure, communicate through multiple channels, execute remote server commands, or interact with AI assistants, AUP provides the right tool for the job. This project serves as a powerful demonstration of how different technologies can be woven together to create a cohesive and highly functional application.
+    """)
+    
+    st.markdown("""
+        **Key Features Include:**
+        - **Cloud Management:** Control AWS EC2 instances and manage S3 storage, including a novel gesture-based control system.
+        - **Communication Suite:** Send SMS, initiate voice calls, dispatch emails, and send WhatsApp messages.
+        - **Remote Operations:** Execute shell commands on remote Linux servers via SSH and manage Docker containers.
+        - **AI Assistants:** Get the latest news summaries or receive personalized astrological guidance from AI-powered bots.
+        - **Interactive Web Tools:** A collection of JavaScript-based utilities for daily tasks like location tracking, getting directions, and capturing photos.
+    """)
+
+# --- JAVASCRIPT TOOLS ---
+def show_photo_capture_tool():
+    st.title("📸 Camera Capture & Save")
+    st.markdown("Use your device's camera to capture and save a photo.")
+    photo_html = """
+    <!DOCTYPE html><html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Camera Capture and Save</title>
+    <style>body{font-family:'Arial',sans-serif;text-align:center;background:linear-gradient(135deg,#957bcf 0%,#6a4bbf 50%,#4a2ca0 100%);padding:20px;min-height:100vh;margin:0;color:white;animation:gradientShift 15s ease infinite;background-size:200% 200%}@keyframes gradientShift{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}h2{text-shadow:0 2px 4px rgba(0,0,0,0.3);margin-bottom:30px;font-size:2.2em}.container{background-color:rgba(255,255,255,0.15);backdrop-filter:blur(8px);border-radius:20px;padding:30px;max-width:400px;margin:0 auto;box-shadow:0 8px 32px rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.1)}video,canvas{margin-top:10px;width:300px;height:225px;border:2px solid rgba(255,255,255,0.3);border-radius:10px;box-shadow:0 4px 8px rgba(0,0,0,0.2);transition:transform .3s ease,box-shadow .3s ease}video:hover,canvas:hover{transform:translateY(-5px);box-shadow:0 8px 16px rgba(0,0,0,0.3)}button{margin:10px;padding:12px 25px;font-size:16px;background-color:rgba(255,255,255,0.9);color:#4a2ca0;border:none;border-radius:30px;cursor:pointer;transition:all .3s ease;font-weight:bold;box-shadow:0 4px 6px rgba(0,0,0,0.1)}button:hover{background-color:white;transform:translateY(-2px);box-shadow:0 6px 12px rgba(0,0,0,0.2)}#photo{border:2px solid rgba(255,255,255,0.3);border-radius:10px;max-width:300px;box-shadow:0 4px 8px rgba(0,0,0,0.2);transition:transform .3s ease}.pulse{animation:pulse 2s infinite}@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,255,255,0.4)}70%{box-shadow:0 0 0 15px rgba(255,255,255,0)}100%{box-shadow:0 0 0 0 rgba(255,255,255,0)}}</style></head>
+    <body><div class="container"><h2>Camera Capture & Save</h2><video id="video" autoplay class="pulse"></video><br><button onclick="capturePhoto()">Capture Photo</button><br><canvas id="canvas" style="display:none;"></canvas><br><img id="photo" alt="Captured Photo" style="display:none;"><br><a id="downloadLink" style="display:none;" download="captured_photo.png"><button>Save Photo</button></a></div>
+    <script>const video=document.getElementById('video'),canvas=document.getElementById('canvas'),photo=document.getElementById('photo'),downloadLink=document.getElementById('downloadLink');navigator.mediaDevices.getUserMedia({video:!0}).then(stream=>{video.srcObject=stream}).catch(err=>{alert("Camera access denied or not available."),console.error(err)});function capturePhoto(){const context=canvas.getContext('2d');canvas.width=video.videoWidth,canvas.height=video.videoHeight,context.drawImage(video,0,0,canvas.width,canvas.height);const imageUrl=canvas.toDataURL('image/png');photo.src=imageUrl,photo.style.display='block',downloadLink.href=imageUrl,downloadLink.style.display='inline-block',photo.classList.add('pulse'),setTimeout(()=>photo.classList.remove('pulse'),2e3)}</script></body></html>
+    """
+    components.html(photo_html, height=600)
+
+def show_directions_tool():
+    st.title("🗺️ Get Directions")
+    st.markdown("Find the best route between two locations using Google Maps.")
+    directions_html = """
+    <!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Get Directions</title><style>body{font-family:'Segoe UI',sans-serif;background:#f4f7f6;padding:20px}.container{max-width:800px;margin:0 auto;background:white;border-radius:20px;box-shadow:0 10px 30px rgba(0,0,0,0.1);overflow:hidden}.header{background:linear-gradient(135deg,#4facfe 0%,#00f2fe 100%);padding:30px;text-align:center;color:white}.header h1{font-size:2em;margin-bottom:10px}.form-container{padding:30px}.input-group{margin-bottom:20px}.input-group label{display:block;margin-bottom:8px;font-weight:600;color:#333}.input-group input{width:100%;padding:15px;border:2px solid #e1e5e9;border-radius:10px;font-size:1em;transition:all .3s ease}.input-group input:focus{outline:none;border-color:#4facfe;box-shadow:0 0 0 3px rgba(79,172,254,0.1)}.btn{width:100%;padding:15px;border:none;border-radius:10px;font-size:1.1em;font-weight:600;cursor:pointer;transition:all .3s ease}.btn-secondary{background:linear-gradient(135deg,#f093fb 0%,#f5576c 100%);color:white}.btn-secondary:hover{transform:translateY(-2px);box-shadow:0 10px 20px rgba(245,87,108,0.3)}</style></head><body><div class="container"><div class="header"><h1>🗺️ Get Directions</h1><p>Find the best route between two locations</p></div><div class="form-container"><div class="input-group"><label for="from">📍 From:</label><input type="text" id="from" placeholder="Enter starting location" value="Mumbai"></div><div class="input-group"><label for="to">🎯 To:</label><input type="text" id="to" placeholder="Enter destination" value="Delhi"></div><button class="btn btn-secondary" onclick="openInMaps()">🗺️ Open in Google Maps</button></div></div><script>function openInMaps(){const from=document.getElementById('from').value.trim(),to=document.getElementById('to').value.trim();if(!from||!to)return void alert('⚠️ Please enter both locations first.');const mapsUrl=`https://www.google.com/maps/dir/${encodeURIComponent(from)}/${encodeURIComponent(to)}`;window.open(mapsUrl,'_blank')}</script></body></html>
+    """
+    components.html(directions_html, height=500)
+
+def show_grocery_finder_tool():
+    st.title("🛒 Grocery Store Finder")
+    st.markdown("Find grocery stores near your current location using Leaflet.js map.")
+    grocery_html = """
+    <!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Grocery Stores Near Me</title><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.min.css" /><style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:10px;background:#f0f2f5}#map{height:400px;border-radius:15px}.btn{background:#4CAF50;color:white;border:none;padding:12px 24px;border-radius:25px;cursor:pointer;font-weight:600}#status{padding:15px;border-radius:10px;margin:10px 0;font-weight:600}.store-card{background:white;border-radius:15px;padding:20px;box-shadow:0 8px 25px rgba(0,0,0,0.1);margin-top:10px}</style></head><body><h1>🛒 Grocery Store Finder</h1><button class="btn" id="findStoresBtn">📍 Find Stores Near Me</button><div id="status" style="display:none;"></div><div id="mapContainer"><div id="map"></div></div><div id="storesContainer"></div><script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.min.js"></script><script>const findBtn=document.getElementById('findStoresBtn'),statusDiv=document.getElementById('status'),storesContainer=document.getElementById('storesContainer'),map=L.map('map').setView([20.5937,78.9629],5);function generateNearbyStores(lat,lon){const names=['Reliance Fresh','DMart','More Megastore','Big Bazaar'];return Array(5).fill(0).map((_,i)=>({name:names[i%names.length],address:`Near location ${i+1}, City`,distance:(5*Math.random()).toFixed(1),lat:lat+(.05*(Math.random()-.5)),lon:lon+(.05*(Math.random()-.5))}))}function displayStores(stores){storesContainer.innerHTML='',stores.forEach(store=>{L.marker([store.lat,store.lon]).addTo(map).bindPopup(`<b>${store.name}</b><br>${store.distance} km away`);const card=document.createElement('div');card.className='store-card',card.innerHTML=`<h3>${store.name}</h3><p>${store.address}</p><p><b>${store.distance} km away</b></p>`,storesContainer.appendChild(card)})}L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map),findBtn.addEventListener('click',()=>{statusDiv.style.display='block',statusDiv.innerText='Getting your location...',navigator.geolocation.getCurrentPosition(pos=>{const{latitude:latitude,longitude:longitude}=pos.coords;map.setView([latitude,longitude],13),L.marker([latitude,longitude]).addTo(map).bindPopup('Your Location').openPopup(),statusDiv.innerText='Finding stores...';const stores=generateNearbyStores(latitude,longitude);displayStores(stores),statusDiv.style.display='none'},err=>{statusDiv.innerText=`Error: ${err.message}`})})</script></body></html>
+    """
+    components.html(grocery_html, height=1000, scrolling=True)
+    
+def show_live_location_tool():
+    st.title("🛰️ Live Location Tracker")
+    st.markdown("Get a real-time feed of your geographic coordinates.")
+    location_html = """
+    <!DOCTYPE html><html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Live Location Viewer</title><style>body{font-family:'Segoe UI',Tahoma,sans-serif;background:linear-gradient(135deg,#667eea,#764ba2);color:white;text-align:center;padding:40px}#location{margin-top:30px;font-size:1.2rem;background:rgba(255,255,255,0.1);padding:20px;border-radius:12px}button{padding:12px 25px;font-size:16px;border:none;border-radius:8px;background-color:#34d399;color:#111;cursor:pointer}</style></head><body><h1>📍 Live Location Viewer</h1><button onclick="getLocation()">Get My Live Location</button><div id="location">Click the button to start tracking your location</div><script>function getLocation(){const output=document.getElementById("location");if(!navigator.geolocation)return void(output.innerHTML="Geolocation not supported.");output.innerHTML="Fetching location...",navigator.geolocation.watchPosition(pos=>{const lat=pos.coords.latitude.toFixed(6),lon=pos.coords.longitude.toFixed(6);output.innerHTML=`<p><strong>Latitude:</strong> ${lat}</p><p><strong>Longitude:</strong> ${lon}</p><p><a href="https://www.google.com/maps?q=${lat},${lon}" target="_blank" style="color:#facc15;">View on Maps</a></p>`},err=>{output.innerHTML=`Error: ${err.message}`})}</script></body></html>
+    """
+    components.html(location_html, height=400)
+
+def show_product_recommendation_tool():
+    st.title("🛍️ Smart Product Recommendation")
+    st.markdown("An example of a recommendation engine that learns from user interaction.")
+    # UPDATED HTML with new image URLs
+    product_html = """
+    <!DOCTYPE html><html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Product Recommendation</title><style>body{font-family:'Segoe UI',sans-serif;background:#f0f2f5;padding:20px}.grid{display:flex;gap:25px;flex-wrap:wrap;justify-content:center}.product{background:white;padding:25px;border-radius:15px;box-shadow:0 10px 20px rgba(0,0,0,0.08);width:260px;text-align:center;cursor:pointer;transition: transform 0.2s;}.product:hover{transform: translateY(-5px);}.product-image{width:180px;height:180px;object-fit:cover;border-radius:10px;}#recommendation{margin:40px auto 0;padding:25px;background:#d4edda;color:#155724;border-radius:10px;font-weight:bold;display:none;max-width:600px;text-align:center}h1{text-align:center;margin-bottom:30px}</style></head><body><h1>Smart Product Explorer</h1><div class="grid" id="products">
+    <div class="product" data-id="1"><img src="https://images.pexels.com/photos/3587478/pexels-photo-3587478.jpeg?auto=compress&cs=tinysrgb&w=400" class="product-image" alt="Headphones"><h3>Premium Headphones</h3><p>₹14,999</p></div>
+    <div class="product" data-id="2"><img src="https://images.pexels.com/photos/277406/pexels-photo-277406.jpeg?auto=compress&cs=tinysrgb&w=400" class="product-image" alt="Watch"><h3>Smart Fitness Watch</h3><p>₹18,499</p></div>
+    <div class="product" data-id="3"><img src="https://images.pexels.com/photos/3780681/pexels-photo-3780681.jpeg?auto=compress&cs=tinysrgb&w=400" class="product-image" alt="Charger"><h3>Wireless Charger</h3><p>₹2,999</p></div>
+    <div class="product" data-id="4"><img src="https://images.pexels.com/photos/1279927/pexels-photo-1279927.jpeg?auto=compress&cs=tinysrgb&w=400" class="product-image" alt="Speaker"><h3>Bluetooth Speaker</h3><p>₹9,799</p></div>
+    </div><div id="recommendation"></div><script>const viewData={},products=document.querySelectorAll('.product');products.forEach(p=>{viewData[p.dataset.id]={views:0},p.addEventListener('mouseenter',()=>viewData[p.dataset.id].views++)}),setInterval(()=>{const sorted=Object.entries(viewData).sort((a,b)=>b[1].views-a[1].views),topProduct=sorted[0];if(topProduct&&topProduct[1].views>2){const name=document.querySelector(`[data-id="${topProduct[0]}"] h3`).innerText,recBox=document.getElementById('recommendation');recBox.innerHTML=`✨ <strong>Recommended for You:</strong> ${name}`,recBox.style.display='block'}},5e3)</script></body></html>
+    """
+    components.html(product_html, height=800, scrolling=True)
+
+
+# --- PYTHON TOOLS (UI ENHANCED & CODE RESTORED) ---
+
+def show_sms_tool():
+    st.title("📲 SMS Sender")
+    st.markdown("Send SMS messages using Twilio.")
+    if check_credentials(["twilio"]):
+        to_number = st.text_input("Recipient Phone Number (with country code)", value="+1", placeholder="e.g., +1234567890")
+        message_body = st.text_area("Your Message", "Hello from the Autonomous Ultra Project!", height=150, placeholder="Type your message here...")
+        if st.button("Send SMS", type="primary"):
+            if to_number and message_body and to_number != "+1":
+                with st.spinner("Sending SMS..."):
+                    try:
+                        message = twilio_client.messages.create(body=message_body, from_=TWILIO_PHONE, to=to_number)
+                        st.success(f"✅ SMS sent successfully! SID: `{message.sid}`")
+                    except Exception as e:
+                        st.error(f"❌ Failed to send SMS: {e}")
+            else:
+                st.warning("Please fill in all the fields.", icon="🔔")
+
+def show_caller_tool():
+    st.title("📞 Voice Caller")
+    st.markdown("Initiate an automated voice call that speaks a custom message.")
+    if check_credentials(["twilio"]):
+        to_number = st.text_input("Recipient Phone Number (with country code)", value="+1", placeholder="e.g., +1234567890")
+        voice_message = st.text_area("Message to Speak", "Hello! This is a test call from the Autonomous Ultra Project.", height=150, placeholder="What do you want the call to say?")
+        if st.button("Place Call", type="primary"):
+            if to_number and voice_message and to_number != "+1":
+                with st.spinner("Initiating call..."):
+                    try:
+                        twiml = f'<Response><Say voice="alice">{voice_message}</Say></Response>'
+                        call = twilio_client.calls.create(to=to_number, from_=TWILIO_PHONE, twiml=twiml)
+                        st.success(f"✅ Call initiated successfully! SID: `{call.sid}`")
+                    except Exception as e:
+                        st.error(f"❌ Failed to initiate call: {e}")
+            else:
+                st.warning("Please fill in all the fields.", icon="🔔")
+
+def show_email_tool():
+    st.title("📧 Python Email Sender")
+    st.markdown("Send an email using your Gmail account via SMTP.")
+    if check_credentials(["email"]):
+        to_email = st.text_input("Receiver's Email", placeholder="recipient@example.com")
+        subject = st.text_input("Subject", placeholder="An important project update")
+        message = st.text_area("Message", placeholder="Dear colleague,\n\nI'd like to share an update...", height=200)
+        if st.button("Send Email", type="primary"):
+            if to_email and subject and message:
+                with st.spinner("Sending email..."):
+                    try:
+                        text = f"Subject: {subject}\n\n{message}"
+                        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+                            server.starttls()
+                            server.login(SENDER_EMAIL, SENDER_APP_PASSWORD)
+                            server.sendmail(SENDER_EMAIL, to_email, text.encode('utf-8'))
+                        st.success("✅ Email sent successfully!")
+                    except Exception as e:
+                        st.error(f"❌ Failed to send email: {e}")
+            else:
+                st.warning("Please fill in all fields.", icon="🔔")
+
+def show_whatsapp_tool():
+    st.title("💬 WhatsApp Messenger")
+    st.markdown("Send WhatsApp messages instantly using PyWhatKit.")
+    st.info("ℹ️ For this to work, you must be logged into WhatsApp Web on this browser.", icon="🌐")
+    phone = st.text_input("Phone Number (with country code)", value="+1", placeholder="e.g., +919876543210")
+    message = st.text_area("Your Message", "Hi! Just wanted to say hello 👋", height=150, placeholder="Type your WhatsApp message...")
+    if st.button("Send via WhatsApp", type="primary"):
+        if phone and message and phone != "+1":
+            with st.spinner("Preparing WhatsApp message..."):
+                try:
+                    kit.sendwhatmsg_instantly(phone_no=phone, message=message, wait_time=15, tab_close=True)
+                    st.success("✅ Instruction sent! Check the new browser tab to send the message.")
+                except Exception as e:
+                    st.error(f"❌ Could not open WhatsApp: {e}")
+        else:
+            st.warning("Please enter a valid phone number and message.", icon="🔔")
+
+def show_digital_image_tool():
+    st.title("🎨 Interactive Image Generator")
+    st.markdown("Create a custom image with your own text and colors.")
+    user_text = st.text_input("Enter text for the image", value="Autonomous Ultra Project", placeholder="Your text here...")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        rect_color = st.color_picker("Rectangle Color", "#FF4B4B")
+    with col2:
+        ellipse_color = st.color_picker("Ellipse Color", "#00BFFF")
+    with col3:
+        text_color = st.color_picker("Text Color", "#FFFFFF")
+
+    if st.button("Generate Custom Image", type="primary"):
+        if not user_text:
+            st.warning("Please enter some text to generate the image.", icon="✍️")
+        else:
+            with st.spinner("Creating your masterpiece..."):
+                width, height = 800, 400
+                image = Image.new("RGB", (width, height), color=(20, 20, 40))
+                draw = ImageDraw.Draw(image)
+                draw.rectangle([50, 50, 350, 350], outline=rect_color, width=10)
+                draw.ellipse([400, 50, 750, 350], outline=ellipse_color, width=10)
+                try:
+                    font = ImageFont.truetype("arial.ttf", size=45)
+                except IOError:
+                    font = ImageFont.load_default(size=45)
+                text_bbox = draw.textbbox((0, 0), user_text, font=font)
+                x = (width - (text_bbox[2] - text_bbox[0])) // 2
+                y = (height - (text_bbox[3] - text_bbox[1])) // 2
+                draw.text((x, y), user_text, font=font, fill=text_color)
+                st.image(image, caption="Your Custom Digital Image", use_column_width=True)
+
+@st.cache_data(ttl=300)
+def get_aajtak_content():
+    try:
+        url = "https://www.aajtak.in/"
+        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, "html.parser")
+            for script in soup(["script", "style"]): script.decompose()
+            news_items = [{"title": title.get_text(strip=True), "link": urljoin(url, link.get('href', ''))}
+                          for title, link in zip(soup.select('h1, h2, h3, .headline'), soup.select('a[href]'))
+                          if title.get_text(strip=True) and len(title.get_text(strip=True)) > 20][:15]
+            text_content = " ".join([item['title'] for item in news_items])
+            return {'news_items': news_items, 'text_content': text_content[:4000]}
+        return {'error': f"Failed to fetch. Status: {response.status_code}"}
+    except Exception as e: return {'error': f"Error fetching news: {e}"}
+
+def get_news_ai_response(user_query, news_context):
+    messages = [{"role": "system", "content": f"You are a helpful AI news assistant for Aaj Tak. Your knowledge is based on these latest headlines: {news_context}. Answer the user's question concisely based *only* on this text. If the answer is not in the text, say 'I do not have information on that from the latest headlines.'"}, {"role": "user", "content": user_query}]
+    try:
+        response = gemini_client.chat.completions.create(model="gemini-1.5-flash", messages=messages)
+        return response.choices[0].message.content
+    except Exception as e: return f"Sorry, AI response failed. Error: {e}"
+
+def show_aajtak_tool():
+    st.title("📰 Aaj Tak News Bot")
+    st.markdown("Ask questions about the latest headlines from Aaj Tak.")
+    if check_credentials(["gemini"]):
+        if 'news_data' not in st.session_state: st.session_state.news_data = get_aajtak_content()
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            st.subheader("Live News Feed")
+            if st.button("🔄 Refresh News"): 
+                with st.spinner("Fetching latest news..."):
+                    st.session_state.news_data = get_aajtak_content()
+            news_data = st.session_state.news_data
+            if 'error' in news_data: st.error(news_data['error'])
+            elif news_data.get('news_items'):
+                for item in news_data['news_items']: st.markdown(f"▪️ [{item['title']}]({item['link']})")
+            else: st.info("No news items found.")
+        with col2:
+            st.subheader("💬 Chat with the AI")
+            if "news_chat_history" not in st.session_state: st.session_state.news_chat_history = []
+            for message in st.session_state.news_chat_history:
+                with st.chat_message(message["role"]): st.markdown(message["content"])
+
+            if user_query := st.chat_input("Ask about the news..."):
+                st.session_state.news_chat_history.append({"role": "user", "content": user_query})
+                with st.chat_message("user"): st.markdown(user_query)
+                with st.spinner("🤖 Thinking..."):
+                    news_context = st.session_state.news_data.get('text_content', '')
+                    ai_response = get_news_ai_response(user_query, news_context)
+                    st.session_state.news_chat_history.append({"role": "assistant", "content": ai_response})
+                    with st.chat_message("assistant"): st.markdown(ai_response)
+
+def get_astro_ai_response(name, dob, zodiac, custom_question):
+    prompt = f"User Name: {name}\nDate of Birth: {dob}\nZodiac Sign: {zodiac}\nCustom Question: {custom_question}"
+    messages = [{"role": "system", "content": "Act as a wise, modern, and spiritual astrologer named AstroGuru. Provide thoughtful, positive, and inspiring guidance based on the user's details. Use emojis to make it engaging."}, {"role": "user", "content": prompt}]
+    try:
+        response = gemini_client.chat.completions.create(model="gemini-1.5-flash", messages=messages, temperature=0.7)
+        return response.choices[0].message.content
+    except Exception as e: return f"Cosmic energies seem to be clouded at the moment. Error: {e}"
+
+def show_astroguru_tool():
+    st.title("🌌 Astro Guru AI")
+    st.markdown("Your personal guide to the cosmos. Find clarity and wisdom in the stars.")
+    if check_credentials(["gemini"]):
+        with st.form(key="astro_form"):
+            name = st.text_input("✨ Your Name", placeholder="e.g., Alex")
+            dob = st.date_input("🗓️ Date of Birth")
+            zodiac = st.selectbox("♋ Your Zodiac Sign", ["Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo", "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"])
+            question = st.text_area("❓ Your Question", placeholder="Ask about your career path, love life, or future journey...")
+            submit_button = st.form_submit_button(label="Ask the Stars ✨", type="primary")
+
+        if submit_button:
+            if name and dob and zodiac and question:
+                with st.spinner("Consulting the cosmos for you..."):
+                    response = get_astro_ai_response(name, dob, zodiac, question)
+                    st.divider()
+                    st.subheader("📜 Here is your guidance:")
+                    st.markdown(response)
+            else:
+                st.warning("Please fill in all the fields to receive your guidance.", icon="🔔")
+
+def run_ssh_command(hostname, port, username, password, command):
+    if not all([hostname, port, username, command]):
+        return "Error: SSH credentials or command are missing. Please fill them out."
+    try:
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(hostname, port=int(port), username=username, password=password, timeout=10)
+        stdin, stdout, stderr = ssh.exec_command(command)
+        output, error = stdout.read().decode(), stderr.read().decode()
+        ssh.close()
+        if output: return output
+        if error: return f"COMMAND ERROR:\n{error}"
+        return "Command executed successfully (no output)."
+    except Exception as e: return f"❌ SSH Connection Failed: {e}"
+
+def show_linux_commands_tool():
+    st.title("🐧 Linux Command Executor")
+    st.markdown("Run any command on your remote Linux server via SSH.")
+    with st.expander("🔐 SSH Connection Details", expanded=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            host = st.text_input("Host IP / DNS", key="ssh_host_linux", placeholder="e.g., 192.168.1.100")
+            username = st.text_input("Username", key="ssh_user_linux", placeholder="e.g., ec2-user, ubuntu")
+        with col2:
+            port = st.number_input("Port", key="ssh_port_linux", value=22)
+            password = st.text_input("Password / Key Phrase", key="ssh_pass_linux", type="password")
+            
+    command = st.text_input("💻 Enter Command to Execute", placeholder="e.g., ls -la /home")
+    if st.button("Run Command", type="primary"):
+        if host and username and command:
+            with st.spinner("Executing command on remote server..."):
+                result = run_ssh_command(host, int(port), username, password, command)
+                st.subheader("📜 Server Output:")
+                st.code(result, language="bash", line_numbers=True)
+        else:
+            st.warning("Please fill in all connection and command fields.")
+
+def show_docker_manager_tool():
+    st.title("🐳 Docker Manager")
+    st.markdown("Manage Docker containers on your remote server with ease.")
+    with st.expander("🔐 SSH Connection Details", expanded=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            host = st.text_input("Host IP / DNS", key="ssh_host_docker", placeholder="e.g., 192.168.1.100")
+            username = st.text_input("Username", key="ssh_user_docker", placeholder="e.g., ec2-user, ubuntu")
+        with col2:
+            port = st.number_input("Port", key="ssh_port_docker", value=22)
+            password = st.text_input("Password / Key Phrase", key="ssh_pass_docker", type="password")
+            
+    st.divider()
+    st.subheader("Select a Docker Operation")
+    menu_options = {
+        "List all containers": "docker ps -a", "List running containers": "docker ps",
+        "List Docker images": "docker images", "Pull image from Docker Hub": "docker pull {}",
+        "Launch a new container": "docker run -dit --name {} {}", "Start a container": "docker start {}",
+        "Stop a container": "docker stop {}", "Remove a container": "docker rm -f {}",
+    }
+    selected_action = st.selectbox("Choose an action:", menu_options.keys())
+    
+    command_template = menu_options[selected_action]
+    command = ""
+    
+    if "{}" in command_template:
+        if "Launch" in selected_action:
+            cname = st.text_input("Enter a Name for the New Container", key="cname_docker", placeholder="e.g., my-web-server")
+            cimage = st.text_input("Enter Docker Image to Run", key="cimage_docker", placeholder="e.g., nginx:latest")
+            if st.button("🚀 Launch Container", type="primary"):
+                if cname and cimage:
+                    command = command_template.format(cname, cimage)
+                else:
+                    st.warning("Please provide both a container name and an image.")
+        elif "Pull" in selected_action:
+            pimage = st.text_input("Enter Image to Pull from Docker Hub", key="pimage_docker", placeholder="e.g., redis:alpine")
+            if st.button("📥 Pull Image", type="primary"):
+                if pimage:
+                    command = command_template.format(pimage)
+                else:
+                    st.warning("Please provide an image name to pull.")
+        else:
+            cname_id = st.text_input("Enter Container Name or ID", key="cname_id_docker", placeholder="e.g., my-web-server or container_id")
+            if st.button(f"⚡ Execute: {selected_action}", type="primary"):
+                if cname_id:
+                    command = command_template.format(cname_id)
+                else:
+                    st.warning("Please provide a container name or ID.")
+    else:
+        if st.button("📊 Get List", type="primary"):
+            command = command_template
+
+    if command:
+        if host and username:
+            with st.spinner(f"Running '{selected_action}' on remote server..."):
+                result = run_ssh_command(host, int(port), username, password, command)
+                st.subheader("📜 Server Output:")
+                st.code(result, language="bash", line_numbers=True)
+        else:
+            st.warning("Please fill in SSH connection details first.")
+
+
+# ==============================================================================
+# --- AWS TOOLS SECTION ---
+# ==============================================================================
+def show_aws_tools():
+    st.title("☁️ AWS Management")
+    
+    try:
+        ec2 = boto3.client("ec2", region_name=AWS_REGION,
+                           aws_access_key_id=AWS_ACCESS_KEY,
+                           aws_secret_access_key=AWS_SECRET_KEY)
+        s3 = boto3.client("s3", region_name=AWS_REGION,
+                          aws_access_key_id=AWS_ACCESS_KEY,
+                          aws_secret_access_key=AWS_SECRET_KEY)
+    except Exception as e:
+        st.error(f"Failed to initialize AWS clients: {e}")
+        return
+
+    tab1, tab2, tab3 = st.tabs(["🚀 EC2 Manager", "📤 S3 Uploader", "🖐️ Gesture Control"])
+
+    # --- TAB 1: EC2 MANAGER ---
+    with tab1:
+        st.subheader("EC2 Instance Control (Manual)")
+        
+        if "instance_id" not in st.session_state:
+            st.session_state.instance_id = None
+
+        def launch_instance():
+            try:
+                response = ec2.run_instances(
+                    ImageId=AMI_1, InstanceType="t2.micro", KeyName=EC2_KEY_1,
+                    MaxCount=1, MinCount=1, SecurityGroupIds=[SG_1],
+                    TagSpecifications=[{"ResourceType": "instance", "Tags": [{"Key": "Name", "Value": "MyAUPInstance"}]}]
+                )
+                instance_id = response["Instances"][0]["InstanceId"]
+                with st.spinner(f"Waiting for instance `{instance_id}` to start..."):
+                    waiter = ec2.get_waiter("instance_running")
+                    waiter.wait(InstanceIds=[instance_id])
+                st.success(f"Instance launched: `{instance_id}`")
+                return instance_id
+            except (ClientError, WaiterError) as e:
+                st.error(f"❌ Failed to launch instance: {e}")
+                return None
+
+        def get_public_ip(instance_id):
+            try:
+                desc = ec2.describe_instances(InstanceIds=[instance_id])
+                return desc["Reservations"][0]["Instances"][0].get("PublicIpAddress")
+            except ClientError as e:
+                st.error(f"❌ Error getting public IP: {e}")
+                return None
+
+        def terminate_instance(instance_id):
+            try:
+                ec2.terminate_instances(InstanceIds=[instance_id])
+                with st.spinner(f"Waiting for instance `{instance_id}` to terminate..."):
+                    waiter = ec2.get_waiter("instance_terminated")
+                    waiter.wait(InstanceIds=[instance_id])
+                st.success(f"Instance `{instance_id}` terminated.")
+                return True
+            except (ClientError, WaiterError) as e:
+                st.error(f"❌ Error terminating instance: {e}")
+                return False
+
+        if st.button("🚀 Launch EC2 Instance"):
+            st.session_state.instance_id = launch_instance()
+
+        if st.session_state.instance_id:
+            st.info(f"Active Instance ID: **{st.session_state.instance_id}**")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🔍 Get Public IP", use_container_width=True):
+                    with st.spinner("Fetching IP..."):
+                        ip = get_public_ip(st.session_state.instance_id)
+                    if ip: st.success(f"🌐 Public IP: **{ip}**")
+                    else: st.warning("Public IP not assigned yet.")
+            with col2:
+                if st.button("🛑 Terminate Instance", type="primary", use_container_width=True):
+                    if terminate_instance(st.session_state.instance_id):
+                        st.session_state.instance_id = None
+                        st.rerun()
+
+    # --- TAB 2: S3 UPLOADER ---
+    with tab2:
+        st.subheader("S3 File Upload")
+        st.info(f"Target Bucket: `{S3_BUCKET_NAME}`")
+        uploaded_file = st.file_uploader("📁 Choose a file to upload", type=None)
+
+        if uploaded_file:
+            if st.button(f"Upload '{uploaded_file.name}' to S3", type="primary"):
+                with st.spinner("Uploading..."):
+                    try:
+                        s3.upload_fileobj(uploaded_file, S3_BUCKET_NAME, uploaded_file.name)
+                        st.success(f"✅ File '{uploaded_file.name}' uploaded to '{S3_BUCKET_NAME}'")
+                    except ClientError as e:
+                        st.error(f"❌ Upload error: {e}")
+
+    # --- TAB 3: HAND GESTURE CONTROL ---
+    with tab3:
+        st.subheader("Hand Gesture EC2 Control")
+        st.warning("🖐️ This feature uses your camera to control EC2 instances based on detected fingers.")
+        
+        def launch_instances_by_gesture(count):
+            try:
+                ec2.run_instances(
+                    ImageId=AMI_2, InstanceType='t2.micro', MinCount=count,
+                    MaxCount=count, KeyName=EC2_KEY_2, SecurityGroupIds=[SG_2]
+                )
+                st.success(f"✅ Launched {count} instance(s).")
+            except Exception as e:
+                st.error(f"❌ Error launching instances: {e}")
+
+        def stop_all_instances():
+            try:
+                instances = ec2.describe_instances(
+                    Filters=[{'Name': 'instance-state-name', 'Values': ['running']}]
+                )
+                instance_ids = [i['InstanceId'] for r in instances['Reservations'] for i in r['Instances']]
+                if instance_ids:
+                    ec2.stop_instances(InstanceIds=instance_ids)
+                    st.warning(f"🛑 Stopping instances: {', '.join(instance_ids)}")
+                else:
+                    st.info("No running instances found to stop.")
+            except Exception as e:
+                st.error(f"❌ Error stopping instances: {e}")
+
+        def count_fingers(image):
+            mp_hands = mp.solutions.hands
+            hands = mp_hands.Hands(static_image_mode=True, max_num_hands=1, min_detection_confidence=0.7)
+            results = hands.process(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+            finger_count = 0
+            annotated_image = image.copy()
+            if results.multi_hand_landmarks:
+                hand = results.multi_hand_landmarks[0]
+                landmarks = hand.landmark
+                # Thumb check
+                if landmarks[mp_hands.HandLandmark.THUMB_IP].x > landmarks[mp_hands.HandLandmark.THUMB_MCP].x:
+                    finger_count += 1
+                # 4 Finger check
+                for i in [8, 12, 16, 20]:
+                    if landmarks[i].y < landmarks[i - 2].y:
+                        finger_count += 1
+                mp.solutions.drawing_utils.draw_landmarks(annotated_image, hand, mp_hands.HAND_CONNECTIONS)
+            return finger_count, annotated_image
+
+        frame = st.camera_input("📷 Show your hand to the camera")
+        if frame:
+            image = Image.open(frame)
+            image_np = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+            
+            with st.spinner("Analyzing gesture..."):
+                finger_count, annotated_img = count_fingers(image_np)
+
+            st.image(cv2.cvtColor(annotated_img, cv2.COLOR_BGR2RGB), caption=f"Detected Fingers: {finger_count}", use_column_width=True)
+            
+            if finger_count > 0:
+                if st.button(f"🚀 Launch {finger_count} EC2 Instance(s)", type="primary"):
+                    launch_instances_by_gesture(finger_count)
+            else:
+                if st.button("🛑 Stop All EC2 Instances", type="primary"):
+                    stop_all_instances()
+
+# --- SIDEBAR & MAIN APP LOGIC ---
+with st.sidebar:
+    st.title("🚀 A.U.P.")
+    st.caption("Autonomous Ultra Project")
+    st.markdown("---")
+    
+    if st.button("🏠 Home", use_container_width=True): st.session_state.selected_tool = "Home"
+
+    # UPDATED JavaScript Tools section
+    with st.expander("📜 JavaScript Tools", expanded=True):
+        if st.button("📸 Photo Capture", use_container_width=True): st.session_state.selected_tool = "Photo Capture"
+        if st.button("🗺️ Get Directions", use_container_width=True): st.session_state.selected_tool = "Directions"
+        if st.button("🛒 Grocery Finder", use_container_width=True): st.session_state.selected_tool = "Grocery Finder"
+        if st.button("🛰️ Live Location", use_container_width=True): st.session_state.selected_tool = "Live Location"
+        if st.button("🛍️ Product Recommender", use_container_width=True): st.session_state.selected_tool = "Product Recommender"
+
+    with st.expander("📡 Communication Suite"):
+        if st.button("📲 SMS Sender", use_container_width=True): st.session_state.selected_tool = "SMS"
+        if st.button("📞 Voice Caller", use_container_width=True): st.session_state.selected_tool = "Caller"
+        if st.button("📧 Python Email Sender", use_container_width=True): st.session_state.selected_tool = "Email"
+        if st.button("💬 WhatsApp Messenger", use_container_width=True): st.session_state.selected_tool = "WhatsApp"
+        if st.button("🎨 Image Generator", use_container_width=True): st.session_state.selected_tool = "Digital Image"
+
+    with st.expander("🤖 AI Assistants"):
+        if st.button("📰 News Bot", use_container_width=True): st.session_state.selected_tool = "Aaj Tak News"
+        if st.button("🌌 Astro Guru", use_container_width=True): st.session_state.selected_tool = "Astro Guru"
+
+    with st.expander("🐧 Remote Operations"):
+        if st.button("⌨️ Linux Commands", use_container_width=True): st.session_state.selected_tool = "Linux Commands"
+        if st.button("🐳 Docker Manager", use_container_width=True): st.session_state.selected_tool = "Docker Manager"
+
+    with st.expander("☁️ AWS Cloud Tools", expanded=False):
+        if st.button("🛠️ AWS Manager", use_container_width=True):
+            st.session_state.selected_tool = "AWS Tools"
+
+
+if 'selected_tool' not in st.session_state: st.session_state.selected_tool = "Home"
+
+# UPDATED Tool Dictionary
+tool_functions = {
+    "Home": show_home_page,
+    "Photo Capture": show_photo_capture_tool, "Directions": show_directions_tool,
+    "Grocery Finder": show_grocery_finder_tool, "Live Location": show_live_location_tool, "Product Recommender": show_product_recommendation_tool,
+    "SMS": show_sms_tool, "Caller": show_caller_tool, "Email": show_email_tool,
+    "WhatsApp": show_whatsapp_tool, "Digital Image": show_digital_image_tool,
+    "Aaj Tak News": show_aajtak_tool, "Astro Guru": show_astroguru_tool,
+    "Linux Commands": show_linux_commands_tool, "Docker Manager": show_docker_manager_tool,
+    "AWS Tools": show_aws_tools,
+}
+
+selected_function = tool_functions.get(st.session_state.selected_tool, show_home_page)
+selected_function()
